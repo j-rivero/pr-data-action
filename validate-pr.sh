@@ -168,15 +168,17 @@ check_version_bump_trailer() {
 add_review_comment() {
     local pr_number=$1
     local body="$2"
+    local event="$3"
 
     log_info "Adding review comment to PR #${pr_number}..."
 
     # Create the review payload
     local review_payload=$(jq -n \
         --arg body "$body" \
+        --arg event "$event" \
         '{
             body: $body,
-            event: "COMMENT"
+            event: $event
         }')
 
     # Submit the review using GitHub API
@@ -206,6 +208,7 @@ generate_review_comment() {
     local version_bump_type="$3"
 
     local comment_body=""
+    local review_event=""
 
     if [[ "$changelog_passed" == "true" && "$version_bump_passed" == "true" ]]; then
         # All checks passed
@@ -217,9 +220,10 @@ All required data for the changelog validation checks have passed:
 - ✅ **Version bump trailer found** - Type: \`${version_bump_type}\`
 
 This PR is ready for review! 🚀"
+        review_event="COMMENT"
     else
         # Some checks failed
-        comment_body="## ❌ PR Data Validation Failed
+        comment_body="## ❌ Changelog Validation Failed
 
 The following issues were found with this PR:
 
@@ -260,9 +264,10 @@ The following issues were found with this PR:
 
         comment_body+="
 Please fix the issues above and push your changes. The validation will run again automatically."
+        review_event="REQUEST_CHANGES"
     fi
 
-    echo "$comment_body"
+    echo "$comment_body|$review_event"
 }
 
 # Main validation function
@@ -305,10 +310,12 @@ main() {
     fi
 
     # Generate review comment
-    COMMENT_BODY=$(generate_review_comment "${changelog_check_passed}" "${version_bump_check_passed}" "${VERSION_BUMP_TYPE}")
+    REVIEW_COMMENT=$(generate_review_comment "${changelog_check_passed}" "${version_bump_check_passed}" "${VERSION_BUMP_TYPE}")
+    COMMENT_BODY="${REVIEW_COMMENT%|*}"
+    REVIEW_EVENT="${REVIEW_COMMENT#*|}"
 
     # Add review comment to PR
-    add_review_comment "${PR_NUMBER}" "${COMMENT_BODY}"
+    add_review_comment "${PR_NUMBER}" "${COMMENT_BODY}" "${REVIEW_EVENT}"
 
     # Final validation result
     if [[ "${changelog_check_passed}" == "true" && "${version_bump_check_passed}" == "true" ]]; then
