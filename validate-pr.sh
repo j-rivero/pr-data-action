@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -ex
 
 # Colors for output
 RED='\033[0;31m'
@@ -35,14 +35,15 @@ check_pr_context() {
 # Get PR number from GitHub context
 get_pr_number() {
     if [[ -f "${GITHUB_EVENT_PATH}" ]]; then
-        PR_NUMBER=$(cat "${GITHUB_EVENT_PATH}" | grep -o '"number": [0-9]*' | cut -d' ' -f2)
+        # For pull requests events except pull_request_target, it is refs/pull/<pr_number>/merge. pull_request_
+        PR_NUMBER=$(echo "${GITHUB_REF}" | grep -oE '[0-9]+')
         if [[ -z "${PR_NUMBER}" ]]; then
-            log_error "Could not extract PR number from event data"
+            log_error "Could not extract PR number from GITHUB_REF"
             exit 1
         fi
         echo "${PR_NUMBER}"
     else
-        log_error "GitHub event path not found"
+        log_error "GITHUB_EVENT_PATH is not set or file does not exist"
         exit 1
     fi
 }
@@ -50,7 +51,6 @@ get_pr_number() {
 # Get list of files changed in the PR
 get_changed_files() {
     local pr_number=$1
-    log_info "Fetching changed files for PR #${pr_number}..."
     
     # Use GitHub API to get PR files
     curl -s \
