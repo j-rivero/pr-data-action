@@ -24,6 +24,142 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Function to post a comment to the PR
+post_pr_comment() {
+    local pr_number=$1
+    local comment_body="$2"
+    
+    log_info "Posting comment to PR #${pr_number}..."
+    
+    # Escape JSON special characters in the comment body
+    local escaped_body=$(echo "$comment_body" | jq -R -s .)
+    
+    # Create the JSON payload
+    local payload="{\"body\": $escaped_body}"
+    
+    # Post the comment using GitHub API
+    curl -s \
+        -X POST \
+        -H "Authorization: token ${GITHUB_TOKEN}" \
+        -H "Accept: application/vnd.github.v3+json" \
+        -H "Content-Type: application/json" \
+        "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${pr_number}/comments" \
+        -d "$payload" > /dev/null
+    
+    if [[ $? -eq 0 ]]; then
+        log_info "Comment posted successfully"
+    else
+        log_warn "Failed to post comment to PR"
+    fi
+}
+
+# Function to update or create a PR comment (to avoid spam)
+update_or_create_pr_comment() {
+    local pr_number=$1
+    local comment_body="$2"
+    local comment_identifier="<!-- pr-data-validation-bot -->"
+    
+    log_info "Checking for existing validation comments..."
+    
+    # Get existing comments from the PR
+    local existing_comments=$(curl -s \
+        -H "Authorization: token ${GITHUB_TOKEN}" \
+        -H "Accept: application/vnd.github.v3+json" \
+        "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${pr_number}/comments")
+    
+    # Look for existing comment with our identifier
+    local existing_comment_id=$(echo "$existing_comments" | jq -r ".[] | select(.body | contains(\"$comment_identifier\")) | .id" | head -1)
+    
+    # Prepare the comment with identifier
+    local full_comment_body="${comment_identifier}\n${comment_body}"
+    local escaped_body=$(echo -e "$full_comment_body" | jq -R -s .)
+    local payload="{\"body\": $escaped_body}"
+    
+    if [[ -n "$existing_comment_id" && "$existing_comment_id" != "null" ]]; then
+        # Update existing comment
+        log_info "Updating existing validation comment (ID: $existing_comment_id)"
+        curl -s \
+            -X PATCH \
+            -H "Authorization: token ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/comments/${existing_comment_id}" \
+            -d "$payload" > /dev/null
+    else
+        # Create new comment
+        log_info "Creating new validation comment"
+        curl -s \
+            -X POST \
+            -H "Authorization: token ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${pr_number}/comments" \
+            -d "$payload" > /dev/null
+    fi
+    
+    if [[ $? -eq 0 ]]; then
+        log_info "PR comment updated successfully"
+    else
+        log_warn "Failed to update PR comment"
+    fi
+}
+
+# Function to create success message
+create_success_message() {
+    local version_bump_type="$1"
+    cat << EOF
+## ✅ PR Validation Passed
+
+Great job! Your pull request meets all the requirements:
+
+- **Changelog**: Found changelog file in \`${CHANGELOG_DIR}/\` directory
+- **Version Bump**: Found valid \`Version-Bump: ${version_bump_type}\` trailer
+
+Your PR is ready for review! 🚀
+EOF
+}
+
+# Function to create failure message
+create_failure_message() {
+    local missing_changelog="$1"
+    local missing_version_bump="$2"
+    local issues=""
+    
+    if [[ "$missing_changelog" == "true" ]]; then
+        issues+="- **Missing Changelog File** ❌\n"
+        issues+="  Please add a changelog file to document your changes:\n"
+        issues+="  1. Create a new file in the \`${CHANGELOG_DIR}/\` directory\n"
+        issues+="  2. Name it descriptively (e.g., \`fix-bug-123.md\`, \`add-new-feature.md\`)\n"
+        issues+="  3. Document what changed, why, and any breaking changes\n\n"
+    fi
+    
+    if [[ "$missing_version_bump" == "true" ]]; then
+        issues+="- **Missing Version Bump Trailer** ❌\n"
+        issues+="  Please add a Version-Bump trailer to one of your commits:\n"
+        issues+="  1. Edit your commit message to include one of:\n"
+        issues+="     - \`Version-Bump: patch\`   (for bug fixes)\n"
+        issues+="     - \`Version-Bump: minor\`   (for new features)\n"
+        issues+="     - \`Version-Bump: major\`   (for breaking changes)\n"
+        issues+="  2. The trailer should be on its own line at the end of the commit message\n\n"
+        issues+="  **Example commit message:**\n"
+        issues+="  \`\`\`\n"
+        issues+="  Fix critical bug in user authentication\n\n"
+        issues+="  This fixes an issue where users couldn't log in\n"
+        issues+="  after password reset.\n\n"
+        issues+="  Version-Bump: patch\n"
+        issues+="  \`\`\`\n"
+    fi
+    
+    cat << EOF
+## ❌ PR Validation Failed
+
+Your pull request needs some updates before it can be merged:
+
+${issues}
+Please fix the issues above and push your changes. This comment will be updated automatically when you make changes.
+EOF
+}
+
 # Check if we're in a pull request context
 check_pr_context() {
     if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then
@@ -153,11 +289,6 @@ check_version_bump_trailer() {
         return 1
     fi
     
-    # Set outputs
-    echo "changelog-found=true" >> $GITHUB_OUTPUT
-    echo "version-bump-found=true" >> $GITHUB_OUTPUT
-    echo "version-bump-type=${version_bump_type}" >> $GITHUB_OUTPUT
-    
     return 0
 }
 
@@ -183,8 +314,10 @@ main() {
     
     # Check for changelog file
     changelog_check_passed=true
+    missing_changelog="false"
     if ! check_changelog_file "${CHANGED_FILES}"; then
         changelog_check_passed=false
+        missing_changelog="true"
     fi
     
     # Get commit messages
@@ -196,16 +329,53 @@ main() {
     
     # Check for version bump trailer
     version_bump_check_passed=true
-    if ! check_version_bump_trailer "${COMMIT_MESSAGES}"; then
+    missing_version_bump="false"
+    found_version_bump_type=""
+    
+    # Store the original check_version_bump_trailer output
+    if check_version_bump_trailer "${COMMIT_MESSAGES}"; then
+        # Extract the version bump type from the function's output
+        found_version_bump_type=$(echo "${COMMIT_MESSAGES}" | while IFS= read -r message; do
+            if echo "${message}" | grep -qi "Version-Bump:"; then
+                bump_value=$(echo "${message}" | grep -oiE "Version-Bump:\s*(patch|minor|major)" | cut -d':' -f2 | xargs | tr '[:upper:]' '[:lower:]')
+                if [[ -n "${bump_value}" ]]; then
+                    for valid_bump in "${REQUIRED_VERSION_BUMPS[@]}"; do
+                        if [[ "${bump_value}" == "${valid_bump}" ]]; then
+                            echo "${bump_value}"
+                            break 2
+                        fi
+                    done
+                fi
+            fi
+        done | head -1)
+    else
         version_bump_check_passed=false
+        missing_version_bump="true"
     fi
     
-    # Final validation result
+    # Final validation result and PR comment
     if [[ "${changelog_check_passed}" == "true" && "${version_bump_check_passed}" == "true" ]]; then
         log_info "✅ All PR data validation checks passed!"
+        
+        # Set outputs
+        echo "changelog-found=true" >> $GITHUB_OUTPUT
+        echo "version-bump-found=true" >> $GITHUB_OUTPUT
+        echo "version-bump-type=${found_version_bump_type}" >> $GITHUB_OUTPUT
+        
+        # Post success comment
+        update_or_create_pr_comment "${PR_NUMBER}" "$(create_success_message "${found_version_bump_type}")"
         exit 0
     else
         log_error "❌ PR data validation failed"
+        
+        # Set outputs
+        echo "changelog-found=${changelog_check_passed}" >> $GITHUB_OUTPUT
+        echo "version-bump-found=${version_bump_check_passed}" >> $GITHUB_OUTPUT
+        echo "version-bump-type=" >> $GITHUB_OUTPUT
+        
+        # Post failure comment
+        update_or_create_pr_comment "${PR_NUMBER}" "$(create_failure_message "${missing_changelog}" "${missing_version_bump}")"
+        
         echo ""
         echo "Please fix the issues above and push your changes."
         exit 1

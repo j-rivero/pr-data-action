@@ -71,6 +71,41 @@ after password reset.
 Version-Bump: patch
 ```
 
+## PR Comments
+
+The action automatically posts comments to the PR using the `github-actions[bot]` account:
+
+### ✅ Success Comment
+When all validations pass, a success comment is posted:
+```
+✅ PR Validation Passed
+
+Great job! Your pull request meets all the requirements:
+
+- Changelog: Found changelog file in `.changelog/` directory
+- Version Bump: Found valid `Version-Bump: patch` trailer
+
+Your PR is ready for review! 🚀
+```
+
+### ❌ Failure Comment
+When validation fails, a detailed comment explains what needs to be fixed:
+```
+❌ PR Validation Failed
+
+Your pull request needs some updates before it can be merged:
+
+- Missing Changelog File ❌
+  Please add a changelog file to document your changes:
+  1. Create a new file in the `.changelog/` directory
+  2. Name it descriptively (e.g., `fix-bug-123.md`, `add-new-feature.md`)
+  3. Document what changed, why, and any breaking changes
+
+Please fix the issues above and push your changes. This comment will be updated automatically when you make changes.
+```
+
+**Note**: The action will update the same comment rather than creating multiple comments, keeping the PR conversation clean.
+
 ## Error Messages
 
 The action provides helpful error messages when validation fails:

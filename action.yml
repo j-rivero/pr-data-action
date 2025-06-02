@@ -1,5 +1,5 @@
 name: 'PR Data Validation'
-description: 'Validates that PRs contain changelog files and version bump trailers'
+description: 'Validates that PRs contain changelog files and version bump trailers, with automatic PR comments'
 author: 'Your Name'
 
 branding:
@@ -27,6 +27,15 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: Install jq
+      shell: bash
+      run: |
+        if ! command -v jq &> /dev/null; then
+          echo "Installing jq..."
+          sudo apt-get update && sudo apt-get install -y jq
+        else
+          echo "jq is already installed"
+        fi
     - name: Validate PR Data
       shell: bash
       run: |
