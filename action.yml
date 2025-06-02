@@ -1,0 +1,39 @@
+name: 'PR Data Validation'
+description: 'Validates that PRs contain changelog files and version bump trailers'
+author: 'Your Name'
+
+branding:
+  icon: 'check-circle'
+  color: 'green'
+
+inputs:
+  token:
+    description: 'GitHub token for API access'
+    required: true
+    default: ${{ github.token }}
+  changelog-dir:
+    description: 'Directory where changelog files should be located'
+    required: false
+    default: '.changelog'
+
+outputs:
+  changelog-found:
+    description: 'Whether a changelog file was found'
+  version-bump-found:
+    description: 'Whether a valid version bump trailer was found'
+  version-bump-type:
+    description: 'The type of version bump (patch, minor, major)'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate PR Data
+      shell: bash
+      run: |
+        echo "Starting PR data validation..."
+        ${{ github.action_path }}/validate-pr.sh
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+        CHANGELOG_DIR: ${{ inputs.changelog-dir }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_EVENT_PATH: ${{ github.event_path }}
