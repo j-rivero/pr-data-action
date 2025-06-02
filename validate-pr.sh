@@ -243,7 +243,7 @@ The following issues were found with this PR:
 
         if [[ "$version_bump_passed" != "true" ]]; then
             comment_body+="- ❌ **Missing version bump trailer**
-  - Please add a \`Version-Bump:\` trailer to one of your commit messages using \`git commit --trailer 'Version-Bump: <type>\`
+  - Please add a \`Version-Bump:\` trailer to one of your commit messages using \`git commit --trailer 'Version-Bump: <type>'\`
   - Valid types: \`patch\` (bug fixes), \`minor\` (new features), \`major\` (breaking changes)
   - Example:
     \`\`\`
