@@ -175,6 +175,8 @@ main() {
     
     # Get changed files
     CHANGED_FILES=$(get_changed_files "${PR_NUMBER}")
+    log_info "Changed files in PR:"
+    echo "${CHANGED_FILES}"
     if [[ -z "${CHANGED_FILES}" ]]; then
         log_warn "No files changed in this PR"
         return 0
