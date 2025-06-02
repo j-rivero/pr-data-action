@@ -100,9 +100,7 @@ get_pr_commits() {
         -H "Authorization: token ${GITHUB_TOKEN}" \
         -H "Accept: application/vnd.github.v3+json" \
         "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${pr_number}/commits" \
-        | grep -A 10 '"commit":' \
-        | grep '"message":' \
-        | cut -d'"' -f4
+        | jq -r '.[].commit.message'
 }
 
 # Check for version bump trailer in commit messages
