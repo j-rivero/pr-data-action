@@ -1,5 +1,5 @@
 #!/bin/bash
-set -ex
+set -e
 
 # Colors for output
 RED='\033[0;31m'
@@ -35,12 +35,14 @@ check_pr_context() {
 # Get PR number from GitHub context
 get_pr_number() {
     if [[ -f "${GITHUB_EVENT_PATH}" ]]; then
-        # For pull requests events except pull_request_target, it is refs/pull/<pr_number>/merge. pull_request_
-        PR_NUMBER=$(echo "${GITHUB_REF}" | grep -oE '[0-9]+')
-        if [[ -z "${PR_NUMBER}" ]]; then
-            log_error "Could not extract PR number from GITHUB_REF"
+        # Extract PR number directly from the event JSON using jq
+        PR_NUMBER=$(jq -r '.pull_request.number' "${GITHUB_EVENT_PATH}")
+
+        if [[ -z "${PR_NUMBER}" || "${PR_NUMBER}" == "null" ]]; then
+            log_error "Could not extract PR number from event data"
             exit 1
         fi
+
         echo "${PR_NUMBER}"
     else
         log_error "GITHUB_EVENT_PATH is not set or file does not exist"
@@ -57,8 +59,7 @@ get_changed_files() {
         -H "Authorization: token ${GITHUB_TOKEN}" \
         -H "Accept: application/vnd.github.v3+json" \
         "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${pr_number}/files" \
-        | grep '"filename":' \
-        | cut -d'"' -f4
+        | jq -r '.[].filename'
 }
 
 # Check if changelog file exists in changed files
