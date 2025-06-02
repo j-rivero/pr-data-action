@@ -209,9 +209,9 @@ generate_review_comment() {
 
     if [[ "$changelog_passed" == "true" && "$version_bump_passed" == "true" ]]; then
         # All checks passed
-        comment_body="## ✅ PR Data Validation Passed
+        comment_body="## ✅ Changelog Validation Passed
 
-All required PR data validation checks have passed:
+All required data for the changelog validation checks have passed:
 
 - ✅ **Changelog file found** - Changes are documented
 - ✅ **Version bump trailer found** - Type: \`${version_bump_type}\`
